@@ -18,7 +18,7 @@ import smach
 import smach_ros
 from sensor_msgs.msg import LaserScan
 import identifica_features
-from sensor_msgs.msg import Imu
+#from sensor_msgs.msg import Imu
 
 import cormodule
 
@@ -41,9 +41,10 @@ min_tras = 3.5
 
 tolerancia_x = 50
 tolerancia_y = 20
-ang_speed = 0.1
+ang_speed = 0.2
 area_ideal = 60000 # área da distancia ideal do contorno - note que varia com a resolução da câmera
 tolerancia_area = 20000
+fugindo = 0
 
 # Atraso máximo permitido entre a imagem sair do Turbletbot3 e chegar no laptop do aluno
 atraso = 1.5
@@ -60,6 +61,7 @@ def roda_todo_frame(imagem):
 	global media_feat
 	global centro_feat
 	global area_feat
+	global GOODMATCH
 
 	now = rospy.get_rostime()
 	imgtime = imagem.header.stamp
@@ -71,7 +73,7 @@ def roda_todo_frame(imagem):
 		antes = time.clock()
 		cv_image = bridge.compressed_imgmsg_to_cv2(imagem, "bgr8")
 		media, centro, area = cormodule.identifica_cor(cv_image)
-		media_feat, centro_feat, area_feat = identifica_features.identifica_feat(cv_image)
+		media_feat, centro_feat, area_feat, GOODMATCH = identifica_features.identifica_feat(cv_image)
 		depois = time.clock()
 		cv2.imshow("Camera", cv_image)
 	except CvBridgeError as e:
@@ -126,11 +128,11 @@ class Girando(smach.State):
         smach.State.__init__(self, outcomes=['alinhou', 'girando','fugindofrente','fugindoesquerda','fugindodireita','fugindotras'])
 
     def execute(self, userdata):
-		global velocidade_saida
+		global velocidade_saida,fugindo
 
 		rospy.sleep(0.01)
 
-		if  min_tras <= 0.2:
+		if  min_tras <= 0.3:
 			return 'fugindotras'
 		if  min_frente <= 0.3:
 			return 'fugindofrente'
@@ -142,18 +144,21 @@ class Girando(smach.State):
 		if media_feat is None or len(media_feat)==0:
 			return 'girando'
 
-		if  math.fabs(media_feat[0]) > math.fabs(centro_feat[0] + tolerancia_x):
-			vel = Twist(Vector3(0, 0, 0), Vector3(0, 0, 1))
+		if  GOODMATCH>=40:
+			fugindo=120
+			vel = Twist(Vector3(1, 0, 0), Vector3(0, 0, 2))
 			#vel = Twist(Vector3(0.05, 0, 0), Vector3(0, 0, 0.03))
 			velocidade_saida.publish(vel)
-			rospy.sleep(1)
 			return 'girando'
 
-		if math.fabs(media_feat[0]) < math.fabs(centro_feat[0] - tolerancia_x):
-			vel = Twist(Vector3(0, 0, 0), Vector3(0, 0, -1))
+		if fugindo >=0:
+			fugindo-=1
+			vel = Twist(Vector3(1, 0, 0), Vector3(0, 0, 2))
+			#vel = Twist(Vector3(0.05, 0, 0), Vector3(0, 0, 0.03))
 			velocidade_saida.publish(vel)
-			rospy.sleep(1)
 			return 'girando'
+
+		
 
 		if media is None or len(media)==0:
 			return 'girando'
@@ -167,7 +172,6 @@ class Girando(smach.State):
 		if math.fabs(media[0]) < math.fabs(centro[0] - tolerancia_x):
 			vel = Twist(Vector3(0, 0, 0), Vector3(0, 0, ang_speed))
 			#vel = Twist(Vector3(0.05, 0, 0), Vector3(0, 0, 0))
-
 
 			velocidade_saida.publish(vel)
 			return 'girando'
@@ -215,7 +219,7 @@ class FugindoFrente(smach.State):
 		if media is None:
 			return 'fugiu'
 
-		if min_tras <= 0.1:
+		if min_tras <= 0.25:
 			return 'fugindotras'
 
 		if  min_frente <= 0.4:
@@ -287,7 +291,7 @@ class FugindoTras(smach.State):
 		if media is None:
 			return 'fugiu'
 
-		if  min_tras <= 0.2:
+		if  min_tras <= 0.3:
 			vel = Twist(Vector3(0.05, 0, 0), Vector3(0, 0, 0))
 			velocidade_saida.publish(vel)
 			return 'fugindotras'

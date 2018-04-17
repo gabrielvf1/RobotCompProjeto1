@@ -14,7 +14,7 @@ from sensor_msgs.msg import Image, CompressedImage
 from cv_bridge import CvBridge, CvBridgeError
 import smach
 import smach_ros
-MIN_MATCH_COUNT=120
+MIN_MATCH_COUNT=40
 
 #detector=cv2.ORB_create()
 detector=cv2.xfeatures2d.SIFT_create()	
@@ -33,8 +33,8 @@ flann=cv2.FlannBasedMatcher(index_params,search_params)
 #flann = cv2.BFMatcher()
 
 
-#trainImg=cv2.imread("imagens/caixa2.jpg",0)
-trainImg=cv2.imread("imagens/foto_aprendida.jpg",0)
+trainImg=cv2.imread("imagens/caixa2.jpg",0)
+#trainImg=cv2.imread("imagens/foto_aprendida.jpg",0)
 rospy.sleep(2)
 trainKP,trainDesc=detector.detectAndCompute(trainImg,None)
 h,w=trainImg.shape
@@ -60,7 +60,7 @@ def identifica_feat(frame):
 
 
 
-	print(len(queryDesc))
+	#print(len(queryDesc))
 	#print('3')
 	matches=flann.knnMatch(queryDesc,trainDesc,k=2)
 	#print('4')
@@ -73,7 +73,7 @@ def identifica_feat(frame):
 			goodMatch.append(m)
 			
 	if(len(goodMatch)>MIN_MATCH_COUNT):
-		print("matches suficientes:{0}".format(len(goodMatch)))
+		# print("matches suficientes:{0}".format(len(goodMatch)))
 		tp=[]
 		qp=[]
 		
@@ -112,7 +112,7 @@ def identifica_feat(frame):
 
 			
 	else:
-		print("matches insuficientes:{0}".format(len(goodMatch)))
+		# print("matches insuficientes:{0}".format(len(goodMatch)))
 		#cv2.imshow('result',QueryImgBGR)
 		media = (0,0)
 		maior_contorno_area = 0
@@ -121,5 +121,6 @@ def identifica_feat(frame):
 	cv2.waitKey(10)
 
 	centro = (QueryImgBGR.shape[0]//2, QueryImgBGR.shape[1]//2)
+	GOODMATCH=len(goodMatch)
 
-	return media, centro, maior_contorno_area
+	return media, centro, maior_contorno_area, GOODMATCH
