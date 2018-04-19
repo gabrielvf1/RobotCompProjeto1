@@ -14,7 +14,7 @@ from sensor_msgs.msg import Image, CompressedImage
 from cv_bridge import CvBridge, CvBridgeError
 import smach
 import smach_ros
-MIN_MATCH_COUNT=40
+MIN_MATCH_COUNT=60
 
 #detector=cv2.ORB_create()
 detector=cv2.xfeatures2d.SIFT_create()	
@@ -33,8 +33,8 @@ flann=cv2.FlannBasedMatcher(index_params,search_params)
 #flann = cv2.BFMatcher()
 
 
-trainImg=cv2.imread("caixa2.jpg",0)
-#trainImg=cv2.imread("imagens/foto_aprendida.jpg",0)
+#trainImg=cv2.imread("caixa2.jpg",0)
+trainImg=cv2.imread("imagens/foto_aprendida.jpg",0)
 rospy.sleep(2)
 trainKP,trainDesc=detector.detectAndCompute(trainImg,None)
 h,w=trainImg.shape

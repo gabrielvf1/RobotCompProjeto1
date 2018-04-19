@@ -17,11 +17,8 @@ from cv_bridge import CvBridge, CvBridgeError
 import smach
 import smach_ros
 from sensor_msgs.msg import LaserScan
-from sensor_msgs.msg import Imu
 import identifica_features
-import transformations
-
-
+#from sensor_msgs.msg import Imu
 
 import cormodule
 
@@ -44,12 +41,10 @@ min_tras = 3.5
 
 tolerancia_x = 50
 tolerancia_y = 20
-ang_speed = 0.1
+ang_speed = 0.2
 area_ideal = 60000 # área da distancia ideal do contorno - note que varia com a resolução da câmera
 tolerancia_area = 20000
-ang_x = 0
-
-#dado.linear_acceleration = 0
+fugindo = 0
 
 # Atraso máximo permitido entre a imagem sair do Turbletbot3 e chegar no laptop do aluno
 atraso = 1.5
@@ -66,6 +61,7 @@ def roda_todo_frame(imagem):
 	global media_feat
 	global centro_feat
 	global area_feat
+	global GOODMATCH
 
 	now = rospy.get_rostime()
 	imgtime = imagem.header.stamp
@@ -77,34 +73,13 @@ def roda_todo_frame(imagem):
 		antes = time.clock()
 		cv_image = bridge.compressed_imgmsg_to_cv2(imagem, "bgr8")
 		media, centro, area = cormodule.identifica_cor(cv_image)
-		media_feat, centro_feat, area_feat = identifica_features.identifica_feat(cv_image)
+		media_feat, centro_feat, area_feat, GOODMATCH = identifica_features.identifica_feat(cv_image)
 		depois = time.clock()
 		cv2.imshow("Camera", cv_image)
 	except CvBridgeError as e:
 		print('ex', e)
 	
-	
-def leu_imu(dado_imu):
-	global ang_x,ang_y,ang_z
-	quat = dado_imu.orientation
-	lista = [quat.x, quat.y, quat.z, quat.w]
-	angulos = np.degrees(transformations.euler_from_quaternion(lista))
-	mensagem = """
-	Tempo: {:}
-	Orientação: {:.2f}, {:.2f}, {:.2f}
-	Vel. angular: x {:.2f}, y {:.2f}, z {:.2f}\
 
-	Aceleração linear:
-	x: {:.2f}
-	y: {:.2f}
-	z: {:.2f}
-
-
-""".format(dado_imu.header.stamp, angulos[0], angulos[1], angulos[2], dado_imu.angular_velocity.x, dado_imu.angular_velocity.y, dado_imu.angular_velocity.z, dado_imu.linear_acceleration.x, dado_imu.linear_acceleration.y, dado_imu.linear_acceleration.z)
-	print(mensagem)
-
-	ang_x = dado_imu.angular_velocity.x
-	
 def scaneou(dado):
 	global min_frente
 	global min_direita
@@ -141,9 +116,9 @@ class Chegou(smach.State):
 		rospy.sleep(0.01)
 		if media is None:
 			return 'girando'
-		if min_frente>0.4:
+		if min_frente>=0.4:
 			return 'girando'
-		if min_frente < 0.4:
+		else:
 			vel = Twist(Vector3(0, 0, 0), Vector3(0, 0, 0))
 			velocidade_saida.publish(vel)
 			return 'parado'
@@ -153,29 +128,12 @@ class Girando(smach.State):
         smach.State.__init__(self, outcomes=['alinhou', 'girando','fugindofrente','fugindoesquerda','fugindodireita','fugindotras'])
 
     def execute(self, userdata):
-		global velocidade_saida,fugindo_imu
+		global velocidade_saida,fugindo
 
 		rospy.sleep(0.01)
 
-		if  min_tras <= 0.2:
+		if  min_tras <= 0.3:
 			return 'fugindotras'
-
-		if  ang_x >= 0.03:
-			fugindo_imu = 80
-			vel = Twist(Vector3(-0.3, 0, 0), Vector3(0, 0, 0))
-			velocidade_saida.publish(vel)
-			return 'fugindofrente'
-
-		if fugindo_imu >0:
-			fugindo_imu-=1
-			vel = Twist(Vector3(-0.3, 0, 0), Vector3(0, 0, 0))
-			velocidade_saida.publish(vel)
-			return 'fugindofrente'
-
-
-
-
-
 		if  min_frente <= 0.3:
 			return 'fugindofrente'
 		if  min_direita <= 0.3:
@@ -186,39 +144,46 @@ class Girando(smach.State):
 		if media_feat is None or len(media_feat)==0:
 			return 'girando'
 
-		if  math.fabs(media_feat[0]) > math.fabs(centro_feat[0] + tolerancia_x):
-			vel = Twist(Vector3(0, 0, 0), Vector3(0, 0, 1))
+		if  GOODMATCH>=40:
+			fugindo=120
+			vel = Twist(Vector3(1, 0, 0), Vector3(0, 0, 2))
 			#vel = Twist(Vector3(0.05, 0, 0), Vector3(0, 0, 0.03))
 			velocidade_saida.publish(vel)
-			rospy.sleep(1)
 			return 'girando'
 
-		if math.fabs(media_feat[0]) < math.fabs(centro_feat[0] - tolerancia_x):
-			vel = Twist(Vector3(0, 0, 0), Vector3(0, 0, -1))
+		if fugindo >=0:
+			fugindo-=1
+			vel = Twist(Vector3(1, 0, 0), Vector3(0, 0, 2))
+			#vel = Twist(Vector3(0.05, 0, 0), Vector3(0, 0, 0.03))
 			velocidade_saida.publish(vel)
-			rospy.sleep(1)
 			return 'girando'
 
+		
 		if media is None or len(media)==0:
 			return 'girando'
 
-		if  math.fabs(media[0]) > math.fabs(centro[0] + tolerancia_x):
+		if  math.fabs(media[0]) > math.fabs(centro[0] + tolerancia_x) and area > 7000:
 			vel = Twist(Vector3(0, 0, 0), Vector3(0, 0, -ang_speed))
 			#vel = Twist(Vector3(0.05, 0, 0), Vector3(0, 0, 0.03))
 
 			velocidade_saida.publish(vel)
 			return 'girando'
-		if math.fabs(media[0]) < math.fabs(centro[0] - tolerancia_x):
+		if math.fabs(media[0]) < math.fabs(centro[0] - tolerancia_x) and area > 7000:
 			vel = Twist(Vector3(0, 0, 0), Vector3(0, 0, ang_speed))
 			#vel = Twist(Vector3(0.05, 0, 0), Vector3(0, 0, 0))
 
-
 			velocidade_saida.publish(vel)
 			return 'girando'
-		else:
+		if area>7000:
 			vel = Twist(Vector3(0, 0, 0), Vector3(0, 0, 0))
 			velocidade_saida.publish(vel)
 			return 'alinhou'
+		else:
+			vel = Twist(Vector3(0, 0, 0), Vector3(0, 0, ang_speed))
+			#vel = Twist(Vector3(0.05, 0, 0), Vector3(0, 0, 0))
+
+			velocidade_saida.publish(vel)
+			return 'girando'
 
 
 class Centralizado(smach.State):
@@ -232,7 +197,8 @@ class Centralizado(smach.State):
 
 		if media is None:
 			return 'alinhou'
-
+		if area < 7000:
+			return 'alinhando'
 		if min_frente<0.4:
 			return	'parado'
 
@@ -259,18 +225,8 @@ class FugindoFrente(smach.State):
 		if media is None:
 			return 'fugiu'
 
-		if min_tras <= 0.1:
+		if min_tras <= 0.25:
 			return 'fugindotras'
-
-		if  dado.linear_acceleration.y >= 5:
-			vel = Twist(Vector3(-0.3, 0, 0), Vector3(0, 0, 0))
-			velocidade_saida.publish(vel)
-			return 'fugindofrente'
-
-		if  min_frente <= 0.4:
-			vel = Twist(Vector3(-0.3, 0, 0), Vector3(0, 0, 0))
-			velocidade_saida.publish(vel)
-			return 'fugindofrente'
 
 		if  min_frente <= 0.4:
 			vel = Twist(Vector3(-0.3, 0, 0), Vector3(0, 0, 0))
@@ -341,7 +297,7 @@ class FugindoTras(smach.State):
 		if media is None:
 			return 'fugiu'
 
-		if  min_tras <= 0.2:
+		if  min_tras <= 0.3:
 			vel = Twist(Vector3(0.05, 0, 0), Vector3(0, 0, 0))
 			velocidade_saida.publish(vel)
 			return 'fugindotras'
@@ -361,12 +317,10 @@ def main():
 
 	# Para usar a webcam 
 
-	
-	recebedor = rospy.Subscriber("/cv_camera/image_raw/compressed", CompressedImage, roda_todo_frame, queue_size=1, buff_size = 2**24)
-	recebe_imu = rospy.Subscriber("/imu", Imu, leu_imu, queue_size=4, buff_size = 2**24)
-	
+	#recebedor = rospy.Subscriber("/cv_camera/image_raw/compressed", CompressedImage, roda_todo_frame, queue_size=1, buff_size = 2**24)
 	recebe_scan = rospy.Subscriber("/scan", LaserScan, scaneou, queue_size=4, buff_size = 2**24)
-	#recebedor = rospy.Subscriber("/raspicam_node/image/compressed", CompressedImage, roda_todo_frame, queue_size=4, buff_size = 2**24)
+	#recebe_imu = rospy.Subscriber("/imu", Imu, leu_imu,queue_size = 1)
+	recebedor = rospy.Subscriber("/raspicam_node/image/compressed", CompressedImage, roda_todo_frame, queue_size=4, buff_size = 2**24)
 	velocidade_saida = rospy.Publisher("/cmd_vel", Twist, queue_size = 1)
 
 
@@ -413,4 +367,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+	main()

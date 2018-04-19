@@ -18,7 +18,8 @@ import smach
 import smach_ros
 from sensor_msgs.msg import LaserScan
 import identifica_features
-#from sensor_msgs.msg import Imu
+from sensor_msgs.msg import Imu
+import transformations
 
 import cormodule
 
@@ -38,6 +39,7 @@ min_direita = 3.5
 min_esquerda = 3.5
 min_tras = 3.5
 
+ang_x = 0 
 
 tolerancia_x = 50
 tolerancia_y = 20
@@ -45,6 +47,7 @@ ang_speed = 0.2
 area_ideal = 60000 # área da distancia ideal do contorno - note que varia com a resolução da câmera
 tolerancia_area = 20000
 fugindo = 0
+fugindo_imu = 0
 
 # Atraso máximo permitido entre a imagem sair do Turbletbot3 e chegar no laptop do aluno
 atraso = 1.5
@@ -102,7 +105,28 @@ def scaneou(dado):
 	min_tras = min(dados[135:225])
 
 
+def leu_imu(dado_imu):
+	global ang_x,ang_y,ang_z
+	quat = dado_imu.orientation
+	lista = [quat.x, quat.y, quat.z, quat.w]
+	angulos = np.degrees(transformations.euler_from_quaternion(lista))
+	mensagem = """
+	Tempo: {:}
+	Orientação: {:.2f}, {:.2f}, {:.2f}
+	Vel. angular: x {:.2f}, y {:.2f}, z {:.2f}\
 
+	Aceleração linear:
+	x: {:.2f}
+	y: {:.2f}
+	z: {:.2f}
+
+
+""".format(dado_imu.header.stamp, angulos[0], angulos[1], angulos[2], dado_imu.angular_velocity.x, dado_imu.angular_velocity.y, dado_imu.angular_velocity.z, dado_imu.linear_acceleration.x, dado_imu.linear_acceleration.y, dado_imu.linear_acceleration.z)
+	print(mensagem)
+
+	ang_x = dado_imu.angular_velocity.x
+	ang_y = dado_imu.angular_velocity.y
+	ang_z = dado_imu.angular_velocity.z
 
 
 
@@ -128,12 +152,27 @@ class Girando(smach.State):
         smach.State.__init__(self, outcomes=['alinhou', 'girando','fugindofrente','fugindoesquerda','fugindodireita','fugindotras'])
 
     def execute(self, userdata):
-		global velocidade_saida,fugindo
+		global velocidade_saida,fugindo,fugindo_imu
 
 		rospy.sleep(0.01)
 
 		if  min_tras <= 0.3:
 			return 'fugindotras'
+
+		if  math.fabs(ang_x) >= 0.02:
+			fugindo_imu = 80
+			vel = Twist(Vector3(-0.3, 0, 0), Vector3(0, 0, 0))
+			velocidade_saida.publish(vel)
+			return 'fugindofrente'
+
+		if fugindo_imu >0:
+			fugindo_imu-=1
+			vel = Twist(Vector3(-0.3, 0, 0), Vector3(0, 0, 0))
+			velocidade_saida.publish(vel)
+			return 'fugindofrente'
+
+
+
 		if  min_frente <= 0.3:
 			return 'fugindofrente'
 		if  min_direita <= 0.3:
@@ -144,7 +183,7 @@ class Girando(smach.State):
 		if media_feat is None or len(media_feat)==0:
 			return 'girando'
 
-		if  GOODMATCH>=40:
+		if  GOODMATCH>=60:
 			fugindo=120
 			vel = Twist(Vector3(1, 0, 0), Vector3(0, 0, 2))
 			#vel = Twist(Vector3(0.05, 0, 0), Vector3(0, 0, 0.03))
@@ -162,19 +201,19 @@ class Girando(smach.State):
 		if media is None or len(media)==0:
 			return 'girando'
 
-		if  math.fabs(media[0]) > math.fabs(centro[0] + tolerancia_x) and area > 7000:
+		if  math.fabs(media[0]) > math.fabs(centro[0] + tolerancia_x) and area > 3000:
 			vel = Twist(Vector3(0, 0, 0), Vector3(0, 0, -ang_speed))
 			#vel = Twist(Vector3(0.05, 0, 0), Vector3(0, 0, 0.03))
 
 			velocidade_saida.publish(vel)
 			return 'girando'
-		if math.fabs(media[0]) < math.fabs(centro[0] - tolerancia_x) and area > 7000:
+		if math.fabs(media[0]) < math.fabs(centro[0] - tolerancia_x) and area > 3000:
 			vel = Twist(Vector3(0, 0, 0), Vector3(0, 0, ang_speed))
 			#vel = Twist(Vector3(0.05, 0, 0), Vector3(0, 0, 0))
 
 			velocidade_saida.publish(vel)
 			return 'girando'
-		if area>7000:
+		if area>3000:
 			vel = Twist(Vector3(0, 0, 0), Vector3(0, 0, 0))
 			velocidade_saida.publish(vel)
 			return 'alinhou'
@@ -197,7 +236,7 @@ class Centralizado(smach.State):
 
 		if media is None:
 			return 'alinhou'
-		if area < 7000:
+		if area < 3000:
 			return 'alinhando'
 		if min_frente<0.4:
 			return	'parado'
@@ -209,7 +248,19 @@ class Centralizado(smach.State):
 			return 'alinhando'
 
 		else:
-			vel = Twist(Vector3(0.2, 0, 0), Vector3(0, 0, 0))
+			if area>35000:
+				vel = Twist(Vector3(0.1, 0, 0), Vector3(0, 0, 0))
+				velocidade_saida.publish(vel)
+				return 'alinhado'
+			if area>22000:
+				vel = Twist(Vector3(0.2, 0, 0), Vector3(0, 0, 0))
+				velocidade_saida.publish(vel)
+				return 'alinhado'
+			if area>13000:
+				vel = Twist(Vector3(0.7, 0, 0), Vector3(0, 0, 0))
+				velocidade_saida.publish(vel)
+				return 'alinhado'
+			vel = Twist(Vector3(1, 0, 0), Vector3(0, 0, 0))
 			velocidade_saida.publish(vel)
 			return 'alinhado'
 
@@ -219,7 +270,7 @@ class FugindoFrente(smach.State):
         smach.State.__init__(self, outcomes=['fugindofrente', 'fugiu','fugindotras'])
 
     def execute(self, userdata):
-		global velocidade_saida
+		global velocidade_saida,fugindo_imu
 		rospy.sleep(0.01)
 
 		if media is None:
@@ -227,6 +278,19 @@ class FugindoFrente(smach.State):
 
 		if min_tras <= 0.25:
 			return 'fugindotras'
+
+		if  math.fabs(ang_x) >= 0.02:
+			fugindo_imu = 80
+			vel = Twist(Vector3(-0.3, 0, 0), Vector3(0, 0, 0))
+			velocidade_saida.publish(vel)
+			return 'fugindofrente'
+
+		if fugindo_imu >0:
+			fugindo_imu-=1
+			vel = Twist(Vector3(-0.3, 0, 0), Vector3(0, 0, 0))
+			velocidade_saida.publish(vel)
+			return 'fugindofrente'
+
 
 		if  min_frente <= 0.4:
 			vel = Twist(Vector3(-0.3, 0, 0), Vector3(0, 0, 0))
@@ -319,7 +383,7 @@ def main():
 
 	#recebedor = rospy.Subscriber("/cv_camera/image_raw/compressed", CompressedImage, roda_todo_frame, queue_size=1, buff_size = 2**24)
 	recebe_scan = rospy.Subscriber("/scan", LaserScan, scaneou, queue_size=4, buff_size = 2**24)
-	#recebe_imu = rospy.Subscriber("/imu", Imu, leu_imu,queue_size = 1)
+	recebe_imu = rospy.Subscriber("/imu", Imu, leu_imu,queue_size = 1)
 	recebedor = rospy.Subscriber("/raspicam_node/image/compressed", CompressedImage, roda_todo_frame, queue_size=4, buff_size = 2**24)
 	velocidade_saida = rospy.Publisher("/cmd_vel", Twist, queue_size = 1)
 
