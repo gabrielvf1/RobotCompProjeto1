@@ -18,8 +18,7 @@ import smach
 import smach_ros
 from sensor_msgs.msg import LaserScan
 import identifica_features
-from sensor_msgs.msg import Imu
-import transformations
+#from sensor_msgs.msg import Imu
 
 import cormodule
 
@@ -40,15 +39,12 @@ min_esquerda = 3.5
 min_tras = 3.5
 
 
-
-
 tolerancia_x = 50
 tolerancia_y = 20
 ang_speed = 0.2
 area_ideal = 60000 # área da distancia ideal do contorno - note que varia com a resolução da câmera
 tolerancia_area = 20000
 fugindo = 0
-fugindo_imu = 0
 
 # Atraso máximo permitido entre a imagem sair do Turbletbot3 e chegar no laptop do aluno
 atraso = 1.5
@@ -83,29 +79,6 @@ def roda_todo_frame(imagem):
 	except CvBridgeError as e:
 		print('ex', e)
 	
-def leu_imu(dado_imu):
-	global ang_x,ang_y,ang_z
-	quat = dado_imu.orientation
-	lista = [quat.x, quat.y, quat.z, quat.w]
-	angulos = np.degrees(transformations.euler_from_quaternion(lista))
-	mensagem = """
-	Tempo: {:}
-	Orientação: {:.2f}, {:.2f}, {:.2f}
-	Vel. angular: x {:.2f}, y {:.2f}, z {:.2f}\
-
-	Aceleração linear:
-	x: {:.2f}
-	y: {:.2f}
-	z: {:.2f}
-
-
-""".format(dado_imu.header.stamp, angulos[0], angulos[1], angulos[2], dado_imu.angular_velocity.x, dado_imu.angular_velocity.y, dado_imu.angular_velocity.z, dado_imu.linear_acceleration.x, dado_imu.linear_acceleration.y, dado_imu.linear_acceleration.z)
-	print(mensagem)
-
-	ang_x = dado_imu.angular_velocity.x
-	ang_y = dado_imu.angular_velocity.y
-	ang_z = dado_imu.angular_velocity.z
-
 
 def scaneou(dado):
 	global min_frente
@@ -141,29 +114,11 @@ class Chegou(smach.State):
     def execute(self, userdata):
 
 		rospy.sleep(0.01)
-
-
-		if  min_tras <= 0.3:
-			return 'fugindotras'
-		
-		if  ang_x >= 0.5:
-			fugindo_imu = 80
-			vel = Twist(Vector3(-0.3, 0, 0), Vector3(0, 0, 0))
-			velocidade_saida.publish(vel)
-			return 'fugindofrente'
-
-		if fugindo_imu >0:
-			fugindo_imu-=1
-			vel = Twist(Vector3(-0.3, 0, 0), Vector3(0, 0, 0))
-			velocidade_saida.publish(vel)
-			return 'fugindofrente'
-
-
 		if media is None:
 			return 'girando'
-		if min_frente>0.4:
+		if min_frente>=0.4:
 			return 'girando'
-		if min_frente < 0.4:
+		else:
 			vel = Twist(Vector3(0, 0, 0), Vector3(0, 0, 0))
 			velocidade_saida.publish(vel)
 			return 'parado'
@@ -173,27 +128,12 @@ class Girando(smach.State):
         smach.State.__init__(self, outcomes=['alinhou', 'girando','fugindofrente','fugindoesquerda','fugindodireita','fugindotras'])
 
     def execute(self, userdata):
-		global velocidade_saida,fugindo,fugindo_imu
+		global velocidade_saida,fugindo
 
 		rospy.sleep(0.01)
 
 		if  min_tras <= 0.3:
 			return 'fugindotras'
-
-		if  ang_x >= 0.5:
-			fugindo_imu = 80
-			vel = Twist(Vector3(-0.3, 0, 0), Vector3(0, 0, 0))
-			velocidade_saida.publish(vel)
-			return 'fugindofrente'
-
-		if fugindo_imu >0:
-			fugindo_imu-=1
-			vel = Twist(Vector3(-0.3, 0, 0), Vector3(0, 0, 0))
-			velocidade_saida.publish(vel)
-			return 'fugindofrente'
-
-
-		
 		if  min_frente <= 0.3:
 			return 'fugindofrente'
 		if  min_direita <= 0.3:
@@ -219,26 +159,31 @@ class Girando(smach.State):
 			return 'girando'
 
 		
-
 		if media is None or len(media)==0:
 			return 'girando'
 
-		if  math.fabs(media[0]) > math.fabs(centro[0] + tolerancia_x):
+		if  math.fabs(media[0]) > math.fabs(centro[0] + tolerancia_x) and area > 7000:
 			vel = Twist(Vector3(0, 0, 0), Vector3(0, 0, -ang_speed))
 			#vel = Twist(Vector3(0.05, 0, 0), Vector3(0, 0, 0.03))
 
 			velocidade_saida.publish(vel)
 			return 'girando'
-		if math.fabs(media[0]) < math.fabs(centro[0] - tolerancia_x):
+		if math.fabs(media[0]) < math.fabs(centro[0] - tolerancia_x) and area > 7000:
 			vel = Twist(Vector3(0, 0, 0), Vector3(0, 0, ang_speed))
 			#vel = Twist(Vector3(0.05, 0, 0), Vector3(0, 0, 0))
 
 			velocidade_saida.publish(vel)
 			return 'girando'
-		else:
+		if area>7000:
 			vel = Twist(Vector3(0, 0, 0), Vector3(0, 0, 0))
 			velocidade_saida.publish(vel)
 			return 'alinhou'
+		else:
+			vel = Twist(Vector3(0, 0, 0), Vector3(0, 0, ang_speed))
+			#vel = Twist(Vector3(0.05, 0, 0), Vector3(0, 0, 0))
+
+			velocidade_saida.publish(vel)
+			return 'girando'
 
 
 class Centralizado(smach.State):
@@ -247,12 +192,13 @@ class Centralizado(smach.State):
 
     def execute(self, userdata):
 		global velocidade_saida
-		
 		rospy.sleep(0.01)
+
 
 		if media is None:
 			return 'alinhou'
-
+		if area < 7000:
+			return 'alinhando'
 		if min_frente<0.4:
 			return	'parado'
 
@@ -273,29 +219,14 @@ class FugindoFrente(smach.State):
         smach.State.__init__(self, outcomes=['fugindofrente', 'fugiu','fugindotras'])
 
     def execute(self, userdata):
-		global velocidade_saida,fugindo_imu
-
+		global velocidade_saida
 		rospy.sleep(0.01)
-
-		if min_tras <= 0.25:
-			return 'fugindotras'
-		
-		if  ang_x >= 0.5 :
-			fugindo_imu = 80
-			vel = Twist(Vector3(-0.3, 0, 0), Vector3(0, 0, 0))
-			velocidade_saida.publish(vel)
-			return 'fugindofrente'
-
-		if fugindo_imu >0:
-			fugindo_imu-=1
-			vel = Twist(Vector3(-0.3, 0, 0), Vector3(0, 0, 0))
-			velocidade_saida.publish(vel)
-			return 'fugindofrente'
 
 		if media is None:
 			return 'fugiu'
 
-		
+		if min_tras <= 0.25:
+			return 'fugindotras'
 
 		if  min_frente <= 0.4:
 			vel = Twist(Vector3(-0.3, 0, 0), Vector3(0, 0, 0))
@@ -386,11 +317,10 @@ def main():
 
 	# Para usar a webcam 
 
-	recebedor = rospy.Subscriber("/cv_camera/image_raw/compressed", CompressedImage, roda_todo_frame, queue_size=1, buff_size = 2**24)
-	recebe_imu = rospy.Subscriber("/imu", Imu, leu_imu)
+	#recebedor = rospy.Subscriber("/cv_camera/image_raw/compressed", CompressedImage, roda_todo_frame, queue_size=1, buff_size = 2**24)
 	recebe_scan = rospy.Subscriber("/scan", LaserScan, scaneou, queue_size=4, buff_size = 2**24)
 	#recebe_imu = rospy.Subscriber("/imu", Imu, leu_imu,queue_size = 1)
-	#recebedor = rospy.Subscriber("/raspicam_node/image/compressed", CompressedImage, roda_todo_frame, queue_size=4, buff_size = 2**24)
+	recebedor = rospy.Subscriber("/raspicam_node/image/compressed", CompressedImage, roda_todo_frame, queue_size=4, buff_size = 2**24)
 	velocidade_saida = rospy.Publisher("/cmd_vel", Twist, queue_size = 1)
 
 
@@ -437,4 +367,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+	main()

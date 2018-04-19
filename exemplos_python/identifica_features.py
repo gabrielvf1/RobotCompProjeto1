@@ -33,7 +33,7 @@ flann=cv2.FlannBasedMatcher(index_params,search_params)
 #flann = cv2.BFMatcher()
 
 
-trainImg=cv2.imread("imagens/caixa2.jpg",0)
+trainImg=cv2.imread("caixa2.jpg",0)
 #trainImg=cv2.imread("imagens/foto_aprendida.jpg",0)
 rospy.sleep(2)
 trainKP,trainDesc=detector.detectAndCompute(trainImg,None)
