@@ -4,3 +4,5 @@ Samuel Granato
 
 link git: https://github.com/gabrielvf1/RobotCompProjeto1
 trello: https://trello.com/b/YSQDnHmW/robotcomp-projeto-1
+
+Maquina de Estados: https://github.com/gabrielvf1/RobotCompProjeto1/blob/master/exemplos_python/cor_estados_gira.py (principal arquivo para rodar)
